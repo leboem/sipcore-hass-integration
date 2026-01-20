@@ -1,4 +1,5 @@
 import logging
+import copy
 from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.components.http import StaticPathConfig
@@ -72,6 +73,15 @@ async def update_listener(hass: HomeAssistant, config_entry: ConfigEntry):
     hass.data[DOMAIN]["options"]["sip_config"] = config_entry.options.get("sip_config")
 
 
+def deep_update(base_dict, overrides):
+    for key, value in overrides.items():
+        if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
+            deep_update(base_dict[key], value)
+        else:
+            base_dict[key] = value
+    return base_dict
+
+
 class SipCoreConfigView(HomeAssistantView):
     """View to serve SIP Core configuration."""
 
@@ -82,8 +92,36 @@ class SipCoreConfigView(HomeAssistantView):
     async def get(self, request: Request):
         """Handle GET request."""
         hass: HomeAssistant = request.app["hass"]
+        user = request["hass_user"]
+
         try:
             sip_config = hass.data[DOMAIN]["options"]["sip_config"]
+            
+            # Replicate frontend matching logic
+            matched_user = None
+            users = sip_config.get("users", [])
+            
+            # 1. Match by User ID
+            for u in users:
+                if u.get("ha_username") == user.id:
+                    matched_user = u
+                    break
+            
+            # 2. Match by Name (if no ID match)
+            if not matched_user:
+                for u in users:
+                    if u.get("ha_username") == user.name:
+                        matched_user = u
+                        break
+
+            # Apply overrides if found
+            if matched_user and "overrides" in matched_user:
+                overrides = matched_user["overrides"]
+                # Use deepcopy to avoid mutating the shared state
+                config = copy.deepcopy(sip_config)
+                deep_update(config, overrides)
+                return self.json(config)
+
             return self.json(sip_config)
         except KeyError:
             return self.json({"error": "No configuration found"}, status_code=500)

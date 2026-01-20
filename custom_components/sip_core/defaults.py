@@ -26,7 +26,10 @@ sip_config = {
         {
             "ha_username": "alice",
             "extension": "102",
-            "password": "1234"
+            "password": "1234",
+            "overrides": {
+                "auto_open": True
+            }
         }
     ],
     "sip_video": False,
